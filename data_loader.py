@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from sklearn.model_selection import train_test_split
 
-def load_crack_data_by_folder(base_dir, img_size=(64, 64), threshold=0.5):
+def load_crack_data_by_folder(base_dir, img_size=(448, 448), threshold=0.5):
     images = []
     labels = []
     
@@ -38,7 +38,7 @@ def load_crack_data_by_folder(base_dir, img_size=(64, 64), threshold=0.5):
 
     return np.array(images), np.array(labels)
 
-def load_and_split_data(base_dir, img_size=(64, 64), test_size=0.2, random_state=42):
+def load_and_split_data(base_dir, img_size=(448, 448), test_size=0.2, random_state=42):
     images, labels = load_crack_data_by_folder(base_dir, img_size=img_size)
     train_images, test_images, train_labels, test_labels = train_test_split(
         images, labels, test_size=test_size, random_state=random_state, stratify=labels

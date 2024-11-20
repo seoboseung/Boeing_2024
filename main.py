@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 def main():
     # 데이터 로드 및 모델 학습
-    train_images, test_images, train_labels, test_labels = load_and_split_data("./crack", img_size=(64, 64))
+    train_images, test_images, train_labels, test_labels = load_and_split_data("./crack", img_size=(448, 448))
     label_names = ['0', '1', '3']
     label_to_index = {label_name: idx for idx, label_name in enumerate(label_names)}
     num_classes = len(label_names)
@@ -48,4 +48,7 @@ def main():
     plt.show()
 
 if __name__ == "__main__":
+    
     main()
+
+
