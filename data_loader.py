@@ -51,11 +51,11 @@ def load_crack_data_by_folder(base_dir, img_size=(64, 64), threshold=0.5):
                     # 이미지 로드 및 전처리
                     img = Image.open(img_path).convert("L")
                     img = resize_with_padding(img, target_size=img_size)
-                    img = np.array(img) / 255.0
-                    binary_img = (img > threshold).astype(np.float32)
-                    binary_img_3ch = np.stack([binary_img, binary_img, binary_img], axis=0)  # (3,64,64)
+                    img = np.array(img) / 255.0  # (H, W)
+                    binary_img = (img > threshold).astype(np.float32)  # (H, W)
+                    binary_img = np.expand_dims(binary_img, axis=2)  # (H, W, 1)
 
-                    images.append(binary_img_3ch)
+                    images.append(binary_img)
                     labels.append(label_idx)  # 매핑된 라벨 인덱스 사용
 
                     # 첫 몇 개의 이미지를 시각적으로 확인

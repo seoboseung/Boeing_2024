@@ -18,20 +18,13 @@ class BernoulliModel:
         self.class_probs = None
 
     def train(self, data, labels, alpha=1.0):
-        """
-        데이터를 학습하여 클래스별 픽셀 발생 확률을 계산합니다.
-        
-        :param data: 학습 데이터 (이미지 배열, shape=(N, 3, H, W))
-        :param labels: 해당 데이터의 라벨 (shape=(N,))
-        :param alpha: 라플라스 스무딩 파라미터
-        """
-        img_shape = data.shape[1:]  # (3, H, W)
-        self.class_pixel_probs = defaultdict(lambda: np.zeros(img_shape[1:]))  # assuming grayscale
+        img_shape = data.shape[1:]  # (H, W, C)
+        self.class_pixel_probs = defaultdict(lambda: np.zeros(img_shape[:2]))  # (H, W)
         self.class_counts = defaultdict(int)
         
         for image, label in zip(data, labels):
-            # Assuming image is binary and single channel is sufficient
-            self.class_pixel_probs[label] += image[0]  # Use the first channel
+            grayscale_image = image[:, :, 0]  # 첫 번째 채널 사용 (이미 (H, W, 1) 형상)
+            self.class_pixel_probs[label] += grayscale_image
             self.class_counts[label] += 1
 
         # 라플라스 스무딩 적용 및 클래스 픽셀 확률 클램핑
@@ -54,10 +47,20 @@ class BernoulliModel:
         """
         관찰된 이미지를 기반으로 후행 확률을 계산합니다.
         
-        :param observed_image: 관찰된 이미지 (이진화된 이미지, shape=(H, W))
+        :param observed_image: 관찰된 이미지 (이진화된 이미지, shape=(H, W) 또는 (H, W, 1))
         :param smoothing: 로그 계산 시 0을 피하기 위한 스무딩 값
         :return: 각 클래스의 후행 확률 (shape=(num_classes,))
         """
+        # observed_image의 형상이 (H, W, 1) 또는 (H, W)일 수 있으므로 처리
+        if observed_image.ndim == 3:
+            observed_image = observed_image[:, :, 0]
+        elif observed_image.ndim == 2:
+            pass  # 이미 (H, W) 형상이므로 그대로 사용
+        else:
+            raise ValueError(f"Invalid shape for observed_image: {observed_image.shape}")
+
+        observed_image = observed_image.mean(axis=0) / 255.0  # (H, W)
+
         log_likelihoods = np.zeros(self.num_classes)
 
         for idx, label in enumerate(self.sorted_labels):
@@ -78,3 +81,4 @@ class BernoulliModel:
         posterior_probs /= posterior_probs.sum()
 
         return posterior_probs
+

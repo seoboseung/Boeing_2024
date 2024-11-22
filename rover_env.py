@@ -1,5 +1,3 @@
-# rover_env.py
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -10,14 +8,14 @@ from matplotlib.patches import Patch
 class RoverEnv(gym.Env):
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, image, bernoulli_model, true_label, render_mode=None):
+    def __init__(self, bernoulli_model, image, label, render_mode=None):
         super().__init__()
-        self.image = image
         self.model = bernoulli_model
-        self.true_label = true_label
-        self.height, self.width = image.shape[1], image.shape[2]
-        self.action_space = spaces.Discrete(4)  # 0: Up, 1: Down, 2: Left, 3: Right
-        self.observation_space = spaces.Box(low=0, high=1, shape=(3, self.height, self.width), dtype=np.float32)
+        self.image = image  # (C, H, W) 형상
+        self.true_label = label
+        self.channels, self.height, self.width = self.image.shape
+        self.action_space = spaces.Discrete(4)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(self.channels, self.height, self.width), dtype=np.uint8)
         self.render_mode = render_mode
 
         self.agent_pos = None
@@ -31,11 +29,11 @@ class RoverEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.agent_pos = [self.height // 2, self.width // 2]  # 중앙에서 시작
-        self.visited = np.zeros_like(self.image)
+        self.agent_pos = [self.height // 2, self.width // 2]
+        self.visited = np.zeros((self.channels, self.height, self.width), dtype=np.uint8)  # (C, H, W)
         self.update_observation()
         self.step_count = 0
-        observation = self.visited.copy()  # (3, H, W)
+        observation = self.visited.copy()
         info = {}
         if self.render_mode == 'human':
             self._init_render()
@@ -43,9 +41,10 @@ class RoverEnv(gym.Env):
 
     def update_observation(self):
         y, x = self.agent_pos
-        self.visited[:, y, x] = 1  # 모든 채널에 방문 표시
+        self.visited[:, y, x] = 255  # 모든 채널에 방문 표시
 
     def step(self, action):
+        collision=False
         y, x = self.agent_pos
         new_y, new_x = y, x  # 잠정적인 새로운 위치
 
@@ -60,28 +59,29 @@ class RoverEnv(gym.Env):
             new_x += 1  # 오른쪽으로 이동
         else:
             # 벽에 부딪혀 이동 불가
+            collision =True
             new_y, new_x = y, x  # 위치 유지
             # 시간에 따른 음의 보상 적용
             time_penalty = -0.01 * self.step_count
-            reward = -1 + time_penalty  # 기본 이동 비용과 시간 기반 음의 보상
-            terminated = False
+            reward = -1 + time_penalty - 50  # 큰 패널티 부여
+            terminated = True  # 에피소드 종료
             truncated = False
             info = {'predicted_label': None, 'confidence': None, 'collision': True}
-            print(f"벽에 부딪혔습니다. 액션: {action}. 이동 불가.")
+            print(f"벽에 부딪혔습니다. 액션: {action}. 이동 불가. 큰 패널티: -50")
             return self.visited.copy(), reward, terminated, truncated, info
 
         # 실제로 이동 가능한지 확인
-        if (new_y, new_x) != (y, x):
-            self.agent_pos = [new_y, new_x]
+        if not collision:
             self.update_observation()
             collision = False
         else:
-            collision = True  # 이동 불가 (이미 벽에 붙어 있음)
+           collision = True  # 이동 불가 (이미 벽에 붙어 있음)
+        #self.update_observation()
 
         self.step_count += 1
 
         # 모델의 predict 메서드 사용
-        observed = self.visited[0]  # 그레이스케일 채널 사용
+        observed = self.visited[:, :, 0]  # 첫 번째 채널 사용
         posterior_probs = self.model.predict(observed, smoothing=1e-2)
 
         # 관찰된 픽셀 비율 기반 가중치 계산
@@ -104,7 +104,7 @@ class RoverEnv(gym.Env):
         reward = -1 + time_penalty  # 기본 이동 비용과 시간 기반 음의 보상
 
         # 흰색 픽셀 탐지 시 추가 보상
-        current_pixel = self.image[0, new_y, new_x]  # 그레이스케일 채널 사용
+        current_pixel = self.image[new_y, new_x, 0]  # 첫 번째 채널 사용
         if current_pixel == 1:
             reward += 5  # 흰색 픽셀 보상
             print(f"흰색 픽셀을 발견했습니다. 추가 보상: +5")
@@ -171,11 +171,11 @@ class RoverEnv(gym.Env):
 
             # 방문한 픽셀 설정
             for channel in range(3):
-                visited_positions = np.where(self.visited[channel] == 1)
+                visited_positions = np.where(self.visited[:, :, channel] == 1)
                 for y, x in zip(visited_positions[0], visited_positions[1]):
-                    if self.image[channel, y, x] == 1:
+                    if self.image[y, x, channel] == 1:
                         display[y, x] = 1  # Visited white
-                    elif self.image[channel, y, x] == 0:
+                    elif self.image[y, x, channel] == 0:
                         display[y, x] = 2  # Visited black
 
             # 색상 맵 생성
