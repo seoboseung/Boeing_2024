@@ -8,7 +8,7 @@ from data_loader import load_and_split_data
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.env_checker import check_env  # 환경 체크 도구 추가
 
-def train_recurrent_ppo(env, num_timesteps=50000):
+def train_recurrent_ppo(env, num_timesteps=100000):
     """
     Recurrent PPO 에이전트를 훈련시킵니다.
     
