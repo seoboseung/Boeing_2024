@@ -1,5 +1,6 @@
 import gymnasium as gym
 from gymnasium import spaces
+from gymnasium.spaces import Dict
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
@@ -15,7 +16,11 @@ class RoverEnv(gym.Env):
         self.true_label = label
         self.channels, self.height, self.width = self.image.shape
         self.action_space = spaces.Discrete(4)
-        self.observation_space = spaces.Box(low=0, high=255, shape=(self.channels, self.height, self.width), dtype=np.uint8)
+        self.observation_space = Dict({
+            'image': spaces.Box(low=0, high=255, shape=(self.channels, self.height, self.width), dtype=np.uint8),
+            'position': spaces.Box(low=0, high=max(self.height, self.width), shape=(2,), dtype=np.int32),
+            
+        })
         self.render_mode = render_mode
 
         self.agent_pos = None
@@ -33,7 +38,11 @@ class RoverEnv(gym.Env):
         self.visited = np.zeros((self.channels, self.height, self.width), dtype=np.uint8)  # (C, H, W)
         self.update_observation()
         self.step_count = 0
-        observation = self.visited.copy()
+        #observation = self.visited.copy()
+        observation = {
+            'image': self.visited.copy(),
+            'position': np.array(self.agent_pos, dtype=np.int32)
+        }
         info = {}
         if self.render_mode == 'human':
             self._init_render()
@@ -44,9 +53,10 @@ class RoverEnv(gym.Env):
         self.visited[:, y, x] = 255  # 모든 채널에 방문 표시
 
     def step(self, action):
-        collision=False
         y, x = self.agent_pos
         new_y, new_x = y, x  # 잠정적인 새로운 위치
+
+        collision = False  # 충돌 여부 초기화
 
         # 이동 시도
         if action == 0 and y > 0:
@@ -58,34 +68,37 @@ class RoverEnv(gym.Env):
         elif action == 3 and x < self.width - 1:
             new_x += 1  # 오른쪽으로 이동
         else:
-            # 벽에 부딪혀 이동 불가
-            collision =True
-            new_y, new_x = y, x  # 위치 유지
-            # 시간에 따른 음의 보상 적용
-            time_penalty = -0.01 * self.step_count
-            reward = -1 + time_penalty - 50  # 큰 패널티 부여
-            terminated = True  # 에피소드 종료
-            truncated = False
-            info = {'predicted_label': None, 'confidence': None, 'collision': True}
-            print(f"벽에 부딪혔습니다. 액션: {action}. 이동 불가. 큰 패널티: -50")
-            return self.visited.copy(), reward, terminated, truncated, info
+            collision = True  # 벽에 부딪힘
 
-        # 실제로 이동 가능한지 확인
+        # 충돌 여부에 따른 처리
         if not collision:
+            # 에이전트 위치 업데이트
+            self.agent_pos = [new_y, new_x]
             self.update_observation()
-            collision = False
+            reward = -1  # 이동 비용
         else:
-           collision = True  # 이동 불가 (이미 벽에 붙어 있음)
-        #self.update_observation()
+            # 이동 불가 시 보상 및 종료 처리
+            reward = -10  # 벽에 부딪힘에 대한 패널티
+            terminated = False
+            truncated = False
+            info = {'collision': True}
+
+            # 관찰 값 반환
+            observation = {
+                'image': self.visited.copy(),
+                'position': np.array(self.agent_pos, dtype=np.int32)
+            }
+            print(f"벽에 부딪혔습니다. 액션: {action}. 이동 불가. 패널티: -10")
+            return observation, reward, terminated, truncated, info
 
         self.step_count += 1
 
         # 모델의 predict 메서드 사용
-        observed = self.visited[:, :, 0]  # 첫 번째 채널 사용
+        observed = self.visited.mean(axis=0)  # 모든 채널 평균
         posterior_probs = self.model.predict(observed, smoothing=1e-2)
 
         # 관찰된 픽셀 비율 기반 가중치 계산
-        num_pixels_observed = np.sum(observed)
+        num_pixels_observed = np.sum(self.visited > 0)
         total_pixels = self.height * self.width
         observation_ratio = num_pixels_observed / total_pixels
         weight = observation_ratio  # 관찰된 픽셀 비율이 높을수록 우도에 더 큰 가중치
@@ -99,13 +112,11 @@ class RoverEnv(gym.Env):
 
         # 시간에 따른 음의 보상
         time_penalty = -0.01 * self.step_count  # 매 스텝마다 -0.01 보상
-
-        # 기본 보상
-        reward = -1 + time_penalty  # 기본 이동 비용과 시간 기반 음의 보상
+        reward += time_penalty  # 이동 비용과 시간 기반 음의 보상 합산
 
         # 흰색 픽셀 탐지 시 추가 보상
-        current_pixel = self.image[new_y, new_x, 0]  # 첫 번째 채널 사용
-        if current_pixel == 1:
+        current_pixel = self.image[:, new_y, new_x]  # 현재 위치의 픽셀 값
+        if np.any(current_pixel > 128):  # 흰색 픽셀로 간주
             reward += 5  # 흰색 픽셀 보상
             print(f"흰색 픽셀을 발견했습니다. 추가 보상: +5")
 
@@ -116,11 +127,11 @@ class RoverEnv(gym.Env):
         if confidence > 0.7:
             terminated = True
             if predicted_label == self.true_label:
-                reward += 10000  # 정확한 예측 시 큰 보상
-                print(f"정확한 예측을 완료했습니다. 보상: +10000")
+                reward += 100  # 정확한 예측 시 보상
+                print(f"정확한 예측을 완료했습니다. 보상: +100")
             else:
-                reward -= 100  # 잘못된 예측 시 큰 패널티
-                print(f"잘못된 예측을 했습니다. 패널티: -100")
+                reward -= 50  # 잘못된 예측 시 패널티
+                print(f"잘못된 예측을 했습니다. 패널티: -50")
         elif self.step_count >= self.max_steps:
             truncated = True  # 최대 스텝 수 도달 시 종료
             print("최대 스텝 수에 도달했습니다. 에피소드 종료.")
@@ -138,9 +149,15 @@ class RoverEnv(gym.Env):
             'collision': collision
         }
 
+        # 관찰 값 반환
+        observation = {
+            'image': self.visited.copy(),
+            'position': np.array(self.agent_pos, dtype=np.int32)
+        }
+
         if self.render_mode == 'human':
             self.render()
-        return self.visited.copy(), reward, terminated, truncated, info
+        return observation, reward, terminated, truncated, info
 
     def _init_render(self):
         plt.ion()

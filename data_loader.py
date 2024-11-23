@@ -53,14 +53,14 @@ def load_crack_data_by_folder(base_dir, img_size=(64, 64), threshold=0.5):
                     img = resize_with_padding(img, target_size=img_size)
                     img = np.array(img) / 255.0  # (H, W)
                     binary_img = (img > threshold).astype(np.float32)  # (H, W)
-                    binary_img = np.expand_dims(binary_img, axis=2)  # (H, W, 1)
+                    binary_img = np.expand_dims(binary_img, axis=0)  # (1,H, W)
 
                     images.append(binary_img)
                     labels.append(label_idx)  # 매핑된 라벨 인덱스 사용
 
                     # 첫 몇 개의 이미지를 시각적으로 확인
                     if len(images) <= 5:
-                        plt.imshow(binary_img, cmap='gray')
+                        plt.imshow(binary_img[0], cmap='gray')  # 채널 차원 제거
                         plt.title(f"Label: {label_name}")
                         plt.show()
 
