@@ -16,11 +16,12 @@ class RoverEnv(gym.Env):
         self.true_label = label
         self.channels, self.height, self.width = self.image.shape
         self.action_space = spaces.Discrete(4)
-        self.observation_space = Dict({
-            'image': spaces.Box(low=0, high=255, shape=(self.channels, self.height, self.width), dtype=np.uint8),
+        self.observation_space = spaces.Dict({
+            'image': spaces.Box(low=0, high=255, shape=(self.channels + 1, self.height, self.width), dtype=np.uint8),
             'position': spaces.Box(low=0, high=max(self.height, self.width), shape=(2,), dtype=np.int32),
-            
+            'posterior_probs': spaces.Box(low=0.0, high=1.0, shape=(self.num_classes,), dtype=np.float32),
         })
+
         self.render_mode = render_mode
 
         self.agent_pos = None
@@ -35,13 +36,16 @@ class RoverEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.agent_pos = [self.height // 2, self.width // 2]
-        self.visited = np.zeros((self.channels, self.height, self.width), dtype=np.uint8)  # (C, H, W)
+        # 채널을 하나 추가하여 방문 정보를 저장
+        self.visited = np.zeros((self.channels + 1, self.height, self.width), dtype=np.uint8)
+        # 원본 이미지 채널 복사
+        self.visited[:self.channels] = self.image
         self.update_observation()
         self.step_count = 0
-        #observation = self.visited.copy()
         observation = {
             'image': self.visited.copy(),
-            'position': np.array(self.agent_pos, dtype=np.int32)
+            'position': np.array(self.agent_pos, dtype=np.int32),
+            'posterior_probs': np.ones(self.num_classes, dtype=np.float32) / self.num_classes,  # 초기에는 균등 분포
         }
         info = {}
         if self.render_mode == 'human':
@@ -50,7 +54,8 @@ class RoverEnv(gym.Env):
 
     def update_observation(self):
         y, x = self.agent_pos
-        self.visited[:, y, x] = 255  # 모든 채널에 방문 표시
+        # 방문 정보 채널에 방문 표시
+        self.visited[self.channels, y, x] = 255
 
     def step(self, action):
         y, x = self.agent_pos
@@ -93,6 +98,7 @@ class RoverEnv(gym.Env):
 
         self.step_count += 1
 
+        
         # 모델의 predict 메서드 사용
         observed = self.visited.mean(axis=0)  # 모든 채널 평균
         posterior_probs = self.model.predict(observed, smoothing=1e-2)
