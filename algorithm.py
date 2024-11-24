@@ -223,7 +223,7 @@ class RoverSimulation:
     def run(self):
         """Run the simulation."""
         self.fig, (self.ax_map, self.ax_bar) = plt.subplots(1, 2, figsize=(12, 6))
-        self.anim = FuncAnimation(self.fig, self.update, interval=500, repeat=False)
+        self.anim = FuncAnimation(self.fig, self.update, interval=200, repeat=False)
         plt.show()
 
     def update_display(self):
@@ -259,7 +259,7 @@ num_classes = len(sorted_labels)
 class_probs_list = [class_priors[label] for label in sorted_labels]
 
 # Load map
-binary_map = np.load("./test_map/label01.npy")
+binary_map = np.load("./test_map/label00.npy")
 start_pos = (32, 32)  # Starting near the center of the map
 
 # Define labels for folders 0, 1, 3 in "crack" directory
